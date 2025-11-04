@@ -13,7 +13,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # API Configuration
-API_URL = "https://texttovideov2.alphaapi.workers.dev/api/"
+API_URL = "https://texttovideoapi.anshapi.workers.dev/"
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -99,8 +99,13 @@ async def generate_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         video_url = data['video']
                     elif 'result' in data:
                         video_url = data['result']
-                    elif 'data' in data and isinstance(data['data'], dict):
-                        video_url = data['data'].get('url') or data['data'].get('video_url')
+                    elif 'videoUrl' in data:
+                        video_url = data['videoUrl']
+                    elif 'data' in data:
+                        if isinstance(data['data'], dict):
+                            video_url = data['data'].get('url') or data['data'].get('video_url') or data['data'].get('videoUrl')
+                        elif isinstance(data['data'], str):
+                            video_url = data['data']
                     
                     # Check for error in JSON
                     if 'error' in data:
@@ -136,7 +141,7 @@ async def generate_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             # Try downloading and sending
                             try:
                                 logger.info(f"Attempting to download video from: {video_url}")
-                                video_response = requests.get(video_url, timeout=120)
+                                video_response = requests.get(video_url, timeout=120, headers=headers)
                                 if video_response.status_code == 200:
                                     await update.message.reply_video(
                                         video=video_response.content,
