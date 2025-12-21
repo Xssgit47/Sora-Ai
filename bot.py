@@ -1,287 +1,207 @@
+#!/usr/bin/env python3
+"""
+Sora-Ai – Text to Video Telegram Bot
+Author / Dev: FNxDANGER
+"""
+
 import os
-import requests
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import requests
 from urllib.parse import quote
-import re
 
-# Enable logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
 )
-logger = logging.getLogger(__name__)
 
-# API Configuration
-API_URL = "https://socialdownloder2.anshapi.workers.dev/"
-BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+# =============== Logging ===============
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger("Sora-Ai")
 
-# Supported platforms
-SUPPORTED_PLATFORMS = [
-    "Instagram", "TikTok", "YouTube", "Facebook", 
-    "Twitter", "Reddit", "Pinterest", "Threads"
-]
+# =============== Config ================
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-def is_valid_url(url):
-    """Check if the text contains a valid URL."""
-    url_pattern = re.compile(
-        r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
-    )
-    return bool(url_pattern.search(url))
+# Text-to-video API (Sora-style)
+TEXT2VIDEO_API = "https://texttovideov2.alphaapi.workers.dev/api/"  # ?prompt=...
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a message when the command /start is issued."""
+
+# =============== Handlers ==============
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    platforms = "\n".join([f"• {platform}" for platform in SUPPORTED_PLATFORMS])
-    
     await update.message.reply_text(
-        f'Hi —<b>DANGER</b> 💥! 👋\n\n'
-        f'I can download videos and photos from social media! 📥\n\n'
-        f'<b>Supported Platforms:</b>\n{platforms}\n\n'
-        f'<b>How to use:</b>\n'
-        f'Just send me a link from any supported platform!\n\n'
-        f'<b>Examples:</b>\n'
-        f'• Instagram: https://www.instagram.com/reel/...\n'
-        f'• TikTok: https://www.tiktok.com/@user/video/...\n'
-        f'• YouTube: https://www.youtube.com/shorts/...\n\n'
-        f'<b>Commands:</b>\n'
-        f'/start - Show this message\n'
-        f'/help - Get help',
-        parse_mode='HTML'
+        f"Hi {user.first_name} 👋\n\n"
+        f"Welcome to <b>Sora-Ai</b> – a Text to Video bot crafted by <b>FNxDANGER</b>. 🔥\n\n"
+        f"Send any prompt and I’ll generate a short AI video for you.\n\n"
+        f"<b>Examples:</b>\n"
+        f"• a girl dancing\n"
+        f"• train running in snowy mountains\n"
+        f"• cyberpunk city at night with neon lights\n\n"
+        f"Commands:\n"
+        f"/start – show this message\n"
+        f"/help – how to use",
+        parse_mode="HTML",
     )
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a message when the command /help is issued."""
-    platforms = "\n".join([f"• {platform}" for platform in SUPPORTED_PLATFORMS])
-    
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        f'📖 *Social Media Downloader Bot*\n\n'
-        f'*How to use:*\n'
-        f'1. Copy a video or photo link from any supported platform\n'
-        f'2. Send the link to me\n'
-        f'3. I\'ll download and send you the media!\n\n'
-        f'*Supported Platforms:*\n{platforms}\n\n'
-        f'*Tips:*\n'
-        f'• Send the direct link (URL)\n'
-        f'• Works with posts, reels, videos, and shorts\n'
-        f'• No watermarks on most platforms\n\n'
-        f'*Need more help?* Just send me a link!',
-        parse_mode='Markdown'
+        "📖 *Sora-Ai – Text to Video (by FNxDANGER)*\n\n"
+        "*How to use:*\n"
+        "1. Type a text description of the scene you want.\n"
+        "2. Send it to this bot.\n"
+        "3. Wait while the AI generates a video (a few seconds to ~1 minute).\n\n"
+        "*Prompt tips:*\n"
+        "• Be specific: `a dog surfing a huge wave at sunset`.\n"
+        "• Keep it clear and not too long.\n\n"
+        "The bot will reply with a video based on your text. 🎬",
+        parse_mode="Markdown",
     )
 
-async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Download media from social media URL."""
-    user_input = update.message.text.strip()
-    
-    # Check if input contains a URL
-    if not is_valid_url(user_input):
-        await update.message.reply_text(
-            '❌ Please send a valid social media link.\n\n'
-            'Example: https://www.instagram.com/reel/...'
-        )
+
+async def generate_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Take user text, call text-to-video API, send video back."""
+    if not update.message or not update.message.text:
         return
-    
-    # Send processing message
-    processing_msg = await update.message.reply_text(
-        '⏳ Downloading your media...\nPlease wait!'
+
+    prompt = update.message.text.strip()
+    if not prompt:
+        await update.message.reply_text("❌ Please send a non‑empty text prompt.")
+        return
+
+    # Feedback to user
+    processing = await update.message.reply_text(
+        "⏳ Sora-Ai is generating your video...\nPlease wait, this can take a bit."
     )
-    
+
     try:
-        # Encode the URL for API request
-        encoded_url = quote(user_input)
-        api_request_url = f"{API_URL}?url={encoded_url}"
-        
-        logger.info(f"Downloading from URL: {user_input}")
-        logger.info(f"API Request URL: {api_request_url}")
-        
-        # Make API request
+        # Build API URL
+        encoded_prompt = quote(prompt)
+        api_url = f"{TEXT2VIDEO_API}?prompt={encoded_prompt}"
+
+        logger.info("FNxDANGER – Requesting video for prompt: %s", prompt)
+        logger.info("API URL: %s", api_url)
+
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            "User-Agent": "Sora-Ai-TelegramBot/FNxDANGER",
         }
-        response = requests.get(api_request_url, headers=headers, timeout=120)
-        
-        logger.info(f"API Response Status: {response.status_code}")
-        logger.info(f"API Response Content-Type: {response.headers.get('Content-Type', 'N/A')}")
-        
-        if response.status_code == 200:
-            content_type = response.headers.get('Content-Type', '').lower()
-            
-            # Log response preview
-            try:
-                if len(response.content) < 10000:
-                    logger.info(f"API Response Preview: {response.text[:500]}")
-                else:
-                    logger.info(f"API Response is large data, size: {len(response.content)} bytes")
-            except:
-                logger.info(f"API Response is binary, size: {len(response.content)} bytes")
-            
-            # Check if response is JSON
-            if 'application/json' in content_type or (len(response.content) < 10000 and response.text.strip().startswith('{')):
-                try:
-                    data = response.json()
-                    logger.info(f"API JSON Response: {data}")
-                    
-                    # Check for error
-                    if 'error' in data:
-                        error_msg = data.get('error', 'Unknown error')
-                        await processing_msg.edit_text(
-                            f'❌ Error: {error_msg}\n\n'
-                            'Please check the link and try again.'
-                        )
-                        logger.error(f"API error: {error_msg}")
-                        return
-                    
-                    # Extract media URL (various possible formats)
-                    media_url = None
-                    media_type = 'video'  # default
-                    
-                    # Try different response formats
-                    if 'url' in data:
-                        media_url = data['url']
-                    elif 'video_url' in data:
-                        media_url = data['video_url']
-                    elif 'videoUrl' in data:
-                        media_url = data['videoUrl']
-                    elif 'download_url' in data:
-                        media_url = data['download_url']
-                    elif 'media' in data:
-                        if isinstance(data['media'], str):
-                            media_url = data['media']
-                        elif isinstance(data['media'], dict):
-                            media_url = data['media'].get('url')
-                    elif 'data' in data:
-                        if isinstance(data['data'], str):
-                            media_url = data['data']
-                        elif isinstance(data['data'], dict):
-                            media_url = data['data'].get('url') or data['data'].get('video_url')
-                    
-                    # Check for media type
-                    if 'type' in data:
-                        media_type = data['type'].lower()
-                    elif 'media_type' in data:
-                        media_type = data['media_type'].lower()
-                    
-                    if media_url:
-                        logger.info(f"Media URL found: {media_url}, Type: {media_type}")
-                        
-                        await processing_msg.edit_text(
-                            '⏳ Downloading media...'
-                        )
-                        
-                        # Download the media
-                        media_response = requests.get(media_url, headers=headers, timeout=120)
-                        
-                        if media_response.status_code == 200:
-                            logger.info(f"Media downloaded, size: {len(media_response.content)} bytes")
-                            
-                            # Send based on media type
-                            if 'image' in media_type or 'photo' in media_type:
-                                await update.message.reply_photo(
-                                    photo=media_response.content,
-                                    caption='📸 Downloaded by —DANGER Bot'
-                                )
-                            else:
-                                # Default to video
-                                await update.message.reply_video(
-                                    video=media_response.content,
-                                    caption='🎬 Downloaded by —DANGER Bot'
-                                )
-                            
-                            await processing_msg.delete()
-                            logger.info(f"Media sent successfully")
-                        else:
-                            raise Exception(f"Failed to download media: {media_response.status_code}")
-                    else:
-                        await processing_msg.edit_text(
-                            '❌ Could not extract media URL from API response.\n\n'
-                            f'Response keys: {", ".join(data.keys())}\n\n'
-                            'Please try again or use a different link.'
-                        )
-                        logger.error(f"No media URL found in response: {data}")
-                
-                except ValueError as e:
-                    await processing_msg.edit_text(
-                        '❌ Invalid API response format.'
-                    )
-                    logger.error(f"JSON parse error: {str(e)}")
-            
-            # Check if response is direct media content
-            elif 'video' in content_type or 'image' in content_type or len(response.content) > 10000:
-                logger.info(f"Direct media content received, size: {len(response.content)} bytes")
-                
-                try:
-                    if 'image' in content_type:
-                        await update.message.reply_photo(
-                            photo=response.content,
-                            caption='📸 Downloaded by —DANGER Bot'
-                        )
-                    else:
-                        await update.message.reply_video(
-                            video=response.content,
-                            caption='🎬 Downloaded by —DANGER Bot'
-                        )
-                    
-                    await processing_msg.delete()
-                    logger.info(f"Direct media sent successfully")
-                except Exception as e:
-                    await processing_msg.edit_text(
-                        f'❌ Failed to send media: {str(e)[:100]}'
-                    )
-                    logger.error(f"Failed to send media: {str(e)}")
-            
-            else:
-                await processing_msg.edit_text(
-                    f'❌ Unexpected response format.\n\n'
-                    f'Content-Type: {content_type}\n'
-                    f'Size: {len(response.content)} bytes\n\n'
-                    'Please try a different link.'
-                )
-                logger.error(f"Unknown format: {content_type}")
-                logger.error(f"Response: {response.text[:500]}")
-        
-        else:
-            await processing_msg.edit_text(
-                f'❌ Download failed (Status: {response.status_code})\n\n'
-                'Possible reasons:\n'
-                '• Link is invalid or expired\n'
-                '• Platform not supported\n'
-                '• Media is private or deleted\n\n'
-                'Please try another link.'
+
+        resp = requests.get(api_url, headers=headers, timeout=180)
+        status = resp.status_code
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+
+        logger.info("API status=%s content-type=%s", status, ctype)
+
+        if status != 200:
+            await processing.edit_text(
+                f"❌ Text‑to‑video API failed (status {status}).\n"
+                f"Try again later."
             )
-            logger.error(f"API failed: {response.status_code} - {response.text[:500]}")
-    
+            return
+
+        # Case 1: JSON with a video URL
+        if "application/json" in ctype or (
+            len(resp.content) < 10000 and resp.text.strip().startswith("{")
+        ):
+            try:
+                data = resp.json()
+                logger.info("API JSON: %s", data)
+
+                if "error" in data:
+                    await processing.edit_text(
+                        f"❌ API error: {data.get('error')}\n"
+                        "Try a different prompt."
+                    )
+                    return
+
+                video_url = (
+                    data.get("video_url")
+                    or data.get("url")
+                    or data.get("video")
+                    or data.get("result")
+                    or data.get("videoUrl")
+                )
+
+                if not video_url:
+                    await processing.edit_text(
+                        "❌ Could not find video URL in API response.\n"
+                        "Please try again with another prompt."
+                    )
+                    logger.error("No video_url in JSON: %s", data)
+                    return
+
+                # Send video by URL
+                await update.message.reply_video(
+                    video=video_url,
+                    caption=f'🎬 Generated by Sora-Ai (FNxDANGER)\nPrompt: "{prompt}"',
+                )
+                await processing.delete()
+                return
+
+            except Exception as e:
+                logger.error("JSON parse/send error: %s", e, exc_info=True)
+                await processing.edit_text(
+                    "❌ Invalid response from generation API.\nPlease try again."
+                )
+                return
+
+        # Case 2: Direct binary video
+        if "video" in ctype or len(resp.content) > 10000:
+            try:
+                await update.message.reply_video(
+                    video=resp.content,
+                    caption=f'🎬 Generated by Sora-Ai (FNxDANGER)\nPrompt: "{prompt}"',
+                )
+                await processing.delete()
+                return
+            except Exception as e:
+                logger.error("Error sending binary video: %s", e, exc_info=True)
+                await processing.edit_text(
+                    "❌ Generated video is too big or failed to send.\nPlease try again."
+                )
+                return
+
+        # Fallback: unknown format
+        logger.error("Unknown API response format: %s", resp.text[:300])
+        await processing.edit_text(
+            "❌ Unexpected response from text‑to‑video API.\nTry again later."
+        )
+
     except requests.Timeout:
-        await processing_msg.edit_text(
-            '⏰ Request timed out.\n\n'
-            'The download is taking too long. Please try again.'
+        logger.error("API timeout (FNxDANGER Sora-Ai)")
+        await processing.edit_text(
+            "⏰ Generation timed out.\nThe server might be busy, please try again."
         )
-        logger.error("Request timed out")
-    
     except Exception as e:
-        await processing_msg.edit_text(
-            f'❌ An error occurred: {str(e)[:100]}\n\n'
-            'Please try again with a different link.'
+        logger.error("Unhandled error in Sora-Ai: %s", e, exc_info=True)
+        await processing.edit_text(
+            "❌ An internal error occurred.\nPlease try again."
         )
-        logger.error(f"Error: {str(e)}", exc_info=True)
 
-def main():
-    """Start the bot."""
+
+# =============== Main ==================
+def main() -> None:
     if not BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN environment variable not set!")
-        return
-    
-    # Create the Application
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Register handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_media))
-    
-    # Start the Bot
-    logger.info("Social Media Downloader Bot started successfully!")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+        logger.error("TELEGRAM_BOT_TOKEN is not set in environment.")
+        raise SystemExit("Set TELEGRAM_BOT_TOKEN env variable and restart Sora-Ai bot.")
 
-if __name__ == '__main__':
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, generate_video)
+    )
+
+    logger.info("Sora-Ai (FNxDANGER) bot started.")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
     main()
